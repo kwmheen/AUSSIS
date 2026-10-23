@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>IRB Consent System - PC Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { brand: { 600: '#2A52BE', 700: '#1d3bb3', 50: '#eef2ff' } } } }
+        }
+    </script>
+    <style>
+        .draggable-field {
+            position: absolute;
+            border: 2px dashed #2A52BE;
+            background: rgba(42, 82, 190, 0.12);
+            cursor: move;
+            user-select: none;
+            touch-action: none;
+        }
+        .draggable-field.edit-mode {
+            border-color: #EF4444;
+            background: rgba(239, 68, 68, 0.15);
+        }
+        .draggable-field.signed {
+            border: 2px solid #10B981;
+            background: transparent;
+        }
+        .resize-handle {
+            position: absolute;
+            right: -4px;
+            bottom: -4px;
+            width: 12px;
+            height: 12px;
+            background-color: #EF4444;
+            border: 2px solid #FFFFFF;
+            border-radius: 2px;
+            cursor: se-resize;
+            display: none;
+        }
+        .draggable-field.edit-mode .resize-handle {
+            display: block;
+        }
+        .field-content {
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+        .field-delete-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            z-index: 3;
+            display: none;
+            padding: 2px 6px;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1.3;
+            color: #fff;
+            background: #dc2626;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+        .draggable-field.edit-mode .field-delete-btn {
+            display: block;
+        }
+        .field-delete-btn:hover {
+            background: #b91c1c;
+        }
+        .draggable-field.is-dragging,
+        .draggable-field.is-dragging * {
+            pointer-events: none;
+        }
+        .draggable-field.is-dragging {
+            opacity: 0.95;
+            cursor: grabbing;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.28);
+            z-index: 80;
+        }
+        .page-wrapper.drop-target {
+            outline: 3px solid #ef4444;
+            outline-offset: 3px;
+        }
+        .draggable-field.active-target {
+            border: 2px solid #d97706;
+            background: rgba(245, 158, 11, 0.16);
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col font-sans">
+    <header class="bg-brand-600 text-white shadow-md h-16 flex items-center px-6 justify-between sticky top-0 z-50">
+        <div class="flex items-center space-x-3">
+            <i data-lucide="monitor" class="w-6 h-6"></i>
+            <div>
+                <h1 class="font-bold text-base">IRB 동의서 시스템 (PC 관리자)</h1>
+                <p class="text-xs text-blue-100"><span id="modeBadge" class="font-bold text-white">프로젝트 선택</span></p>
+            </div>
+        </div>
+        <div class="flex flex-col items-end text-xs bg-brand-700/60 px-3 py-1.5 rounded-xl border border-white/20">
+            <span class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>iPad 접속 주소: <strong id="padUrlText" class="underline text-white">측정 중...</strong></span>
+            </span>
+            <span id="ipv4Text" class="text-[10px] text-blue-100 mt-0.5">IPv4 측정 중</span>
+        </div>
+    </header>
+
+    <section id="screenHome" class="flex-1 max-w-3xl w-full mx-auto p-6">
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+            <h2 class="text-lg font-bold">프로젝트 선택</h2>
+            <p class="text-xs text-slate-500 mt-1">저장된 JSON 프로젝트 중 하나를 고르거나 새로 만듭니다.</p>
+            <div class="flex gap-2 mt-4">
+                <input id="newProjectName" type="text" placeholder="새 프로젝트 이름" class="flex-1 p-2.5 border rounded-xl text-sm">
+                <button onclick="createProject()" class="px-4 py-2.5 bg-brand-600 text-white font-bold rounded-xl text-sm">만들기</button>
+            </div>
+            <div id="projectList" class="mt-5 space-y-2"></div>
+        </div>
+    </section>
+
+    <section id="screenMode" class="hidden flex-1 max-w-3xl w-full mx-auto p-6">
+        <button onclick="showHome()" class="text-xs font-bold text-slate-500 mb-3">← 프로젝트 목록</button>
+        <h2 id="modeProjectName" class="text-lg font-bold mb-1">프로젝트</h2>
+        <p class="text-xs text-slate-500 mb-4">실험 전과 실험 중은 서로 다른 화면입니다.</p>
+        <div class="grid grid-cols-2 gap-4">
+            <button onclick="enterPrep()" class="text-left bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 hover:bg-amber-100">
+                <p class="text-[11px] font-bold text-amber-700">BEFORE</p>
+                <h3 class="text-xl font-bold text-amber-950 mt-1">실험 전</h3>
+                <p class="text-xs text-amber-800 mt-2 leading-relaxed">동의서 PDF를 추가하고, 각 PDF의 서명란 위치와 크기를 정해 프로젝트 JSON에 저장합니다.</p>
+            </button>
+            <button onclick="enterLive()" class="text-left bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-5 hover:bg-emerald-100">
+                <p class="text-[11px] font-bold text-emerald-700">DURING</p>
+                <h3 class="text-xl font-bold text-emerald-950 mt-1">실험 중</h3>
+                <p class="text-xs text-emerald-800 mt-2 leading-relaxed">피험자 이름을 만들고, 그 피험자의 iPad 서명을 받습니다. 모든 PDF 서명이 끝나면 확인합니다.</p>
+            </button>
+        </div>
+    </section>
+
+    <section id="screenLive" class="hidden flex-1 max-w-3xl w-full mx-auto p-6">
+        <button onclick="showMode()" class="text-xs font-bold text-emerald-700 mb-3">← 모드 선택</button>
+        <div class="bg-emerald-700 text-white rounded-2xl p-5 shadow-sm">
+            <p class="text-[11px] font-bold text-emerald-100">실험 중</p>
+            <h2 class="text-lg font-bold mt-1">피험자 목록</h2>
+            <p id="liveProjectName" class="text-xs text-emerald-100 mt-1"></p>
+        </div>
+        <div class="bg-white rounded-2xl p-5 shadow-sm border border-emerald-200 mt-4">
+            <div class="flex gap-2">
+                <input id="newParticipantName" type="text" placeholder="피험자 이름" class="flex-1 p-2.5 border rounded-xl text-sm">
+                <button onclick="createParticipant()" class="px-4 py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-sm">피험자 추가</button>
+            </div>
+            <div id="participantList" class="mt-4 space-y-2"></div>
+        </div>
+    </section>
+
+    <main id="screenWorkspace" class="hidden flex-1 max-w-7xl w-full mx-auto p-6 gap-6">
+        <!-- Sidebar Controls -->
+        <div class="w-80 flex flex-col gap-4">
+            <div id="workspaceBanner" class="rounded-2xl p-4 border-2 border-amber-300 bg-amber-50">
+                <p id="workspaceKicker" class="text-[11px] font-bold text-amber-700">실험 전</p>
+                <h2 id="workspaceTitle" class="font-bold text-sm mt-1">서명란 배치</h2>
+                <p id="workspaceHint" class="text-[11px] text-amber-800 mt-1 leading-relaxed">PDF를 추가하고 서명란을 저장합니다.</p>
+                <button onclick="leaveWorkspace()" class="mt-3 text-[11px] font-bold underline">← 뒤로</button>
+            </div>
+
+            <div id="prepUpload" class="bg-white rounded-2xl p-5 shadow-sm border border-amber-200">
+                <h2 class="font-bold text-sm mb-3 flex items-center gap-2">
+                    <i data-lucide="upload-cloud" class="w-4 h-4 text-amber-600"></i>
+                    동의서 PDF 추가
+                </h2>
+                <label class="block w-full border-2 border-dashed border-amber-300 rounded-xl p-3 text-center cursor-pointer hover:bg-amber-50 transition-all">
+                    <input type="file" id="pdfFileInput" accept="application/pdf" class="hidden" onchange="handleFileUpload(event)">
+                    <span class="text-xs text-slate-600 font-medium block" id="fileNameLabel">PDF를 선택해 프로젝트에 저장</span>
+                </label>
+                <div id="docList" class="mt-3 space-y-1"></div>
+            </div>
+
+            <!-- Mode & Editing Controls -->
+            <div id="docListLive" class="hidden bg-white rounded-2xl p-5 shadow-sm border border-emerald-200">
+                <h2 class="font-bold text-sm mb-3">이 피험자의 PDF</h2>
+                <div id="docListLiveItems" class="space-y-1"></div>
+            </div>
+
+            <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+                <h2 id="editorHeading" class="font-bold text-sm mb-3">서명란 위치와 크기</h2>
+
+                <div id="liveModeStatus" class="hidden p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs mb-2">
+                    <p class="font-bold text-emerald-800">실험 중 · iPad 서명</p>
+                    <p id="liveModeDetail" class="text-emerald-700 text-[11px] mt-1 leading-relaxed">피험자를 선택하면 서명란이 iPad에 표시됩니다.</p>
+                </div>
+
+                <div id="editModeTools" class="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs">
+                    <p class="font-bold text-amber-900">실험 전 · 배치 편집</p>
+                    <p class="text-amber-800 text-[11px] leading-relaxed">서명란을 드래그하면 다른 PDF 페이지로 옮길 수 있습니다. 화면 위·아래 가장자리로 가져가면 문서가 스크롤됩니다. 오른쪽 위 삭제로 서명란을 없앨 수 있고, 우측 하단 핸들로 크기를 조절합니다. 변경은 프로젝트 JSON에 저장됩니다.</p>
+                    <p class="text-red-700 text-[11px]">새 서명란은 지금 가장 많이 보이는 <b id="visiblePageLabel">1</b>페이지에 추가됩니다.</p>
+                    <button onclick="addNewField()" class="w-full py-1.5 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700">
+                        + 새 서명란 추가
+                    </button>
+                </div>
+            </div>
+
+            <!-- Participant Info -->
+            <button id="btnConfirm" onclick="confirmParticipant()" class="hidden w-full py-3 bg-emerald-600 text-white font-bold rounded-2xl shadow-md text-sm">확인</button>
+
+            <div id="participantCard" class="hidden bg-white rounded-2xl p-5 shadow-sm border border-emerald-200 space-y-3 text-xs">
+                <h2 class="font-bold text-sm mb-1">실험 중 피험자</h2>
+                <div>
+                    <label class="block text-slate-500 mb-1">피험자 성명</label>
+                    <input type="text" id="pName" value="" readonly class="w-full p-2 border rounded-lg bg-slate-50">
+                </div>
+                <div>
+                    <label class="block text-slate-500 mb-1">작성 일자</label>
+                    <input type="date" id="pDate" class="w-full p-2 border rounded-lg" onchange="syncParticipant()">
+                </div>
+            </div>
+
+            <!-- Download -->
+            <button onclick="downloadFinalPDF()" id="btnDownload" class="w-full py-3 bg-brand-600 text-white font-bold rounded-2xl shadow-md hover:bg-brand-700 transition-all flex items-center justify-center space-x-2 text-xs">
+                <i data-lucide="file-check" class="w-4 h-4"></i>
+                <span>서명 완료본 PDF 저장</span>
+            </button>
+        </div>
+
+        <!-- Continuous Vertical PDF Container -->
+        <div class="flex-1 bg-slate-200 rounded-2xl p-6 overflow-y-auto max-h-[85vh] flex flex-col items-center shadow-inner relative" id="pdfScrollWrapper">
+            <div id="pdfPagesContainer" class="flex flex-col gap-6 items-center w-full max-w-3xl relative">
+                <!-- PDF Pages Rendered Here vertically -->
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let ws;
+        let isEditMode = false;
+        let fieldDragActive = false;
+        let fields = [];
+        let pdfDoc = null;
+        let pdfRawBytes = null;
+        let regionSendToken = 0;
+        let pdfJob = Promise.resolve();
+        let workspaceMode = null;
+        let currentProject = null;
+        let currentDocumentId = null;
+        let currentParticipantId = null;
+        let advancing = false;
+        let saveTimer = null;
+        let applyingRemoteFields = false;
+
+        function enqueuePdfJob(job) {
+            const run = pdfJob.then(job, job);
+            pdfJob = run.then(() => {}, () => {});
+            return run;
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            lucide.createIcons();
+            document.getElementById('pDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('pdfScrollWrapper').addEventListener('scroll', updateVisiblePageHint);
+            window.addEventListener('resize', updateVisiblePageHint);
+            initWebSocket();
+            refreshPadUrl();
+            setInterval(refreshPadUrl, 5000);
+            showScreen('home');
+            await loadProjects();
+        });
+
+        async function refreshPadUrl() {
+            try {
+                const host = await api('/api/host');
+                const port = location.port || host.port || '8000';
+                const url = `http://${host.ip}:${port}/pad`;
+                document.getElementById('padUrlText').textContent = url;
+                document.getElementById('ipv4Text').textContent = `IPv4 ${host.ip}`;
+            } catch (error) {
+                document.getElementById('ipv4Text').textContent = 'IPv4를 읽지 못했습니다.';
+            }
+        }
+
+        async function api(url, options) {
+            const response = await fetch(url, options);
+            const text = await response.text();
+            let data = null;
+            try { data = text ? JSON.parse(text) : null; } catch (error) { data = text; }
+            if (!response.ok) throw new Error((data && data.detail) || text || response.statusText);
+            return data;
+        }
+
+        function showScreen(name) {
+            document.getElementById('screenHome').classList.toggle('hidden', name !== 'home');
+            document.getElementById('screenMode').classList.toggle('hidden', name !== 'mode');
+            document.getElementById('screenLive').classList.toggle('hidden', name !== 'live');
+            const workspace = document.getElementById('screenWorkspace');
+            workspace.classList.toggle('hidden', name !== 'workspace');
+            workspace.classList.toggle('flex', name === 'workspace');
+            const labels = {
+                home: '프로젝트 선택',
+                mode: '모드 선택',
+                live: '실험 중 · 피험자',
+                workspace: workspaceMode === 'prep' ? '실험 전 · 서명란 배치' : '실험 중 · 서명 진행'
+            };
+            document.getElementById('modeBadge').textContent = labels[name] || '';
+        }
+
+        async function loadProjects() {
+            const projects = await api('/api/projects');
+            const list = document.getElementById('projectList');
+            if (!projects.length) {
+                list.innerHTML = '<p class="text-xs text-slate-400 py-6 text-center">아직 프로젝트가 없습니다.</p>';
+                return;
+            }
+            list.innerHTML = projects.map(project => `
+                <div class="flex items-center gap-2 border border-slate-200 rounded-xl p-3">
+                    <button onclick="selectProject('${project.id}')" class="flex-1 text-left">
+                        <span class="block font-bold text-sm">${escapeHtml(project.name)}</span>
+                        <span class="block text-[11px] text-slate-500 mt-0.5">PDF ${project.documentCount}개 · 피험자 ${project.participantCount}명</span>
+                    </button>
+                    <button onclick="removeProject('${project.id}')" class="text-[11px] font-bold text-red-600 px-2">삭제</button>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, (char) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[char]));
+        }
+
+        async function createProject() {
+            const name = document.getElementById('newProjectName').value.trim();
+            if (!name) return;
+            const project = await api('/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            document.getElementById('newProjectName').value = '';
+            await selectProject(project.id);
+        }
+
+        async function removeProject(id) {
+            if (!confirm('이 프로젝트를 삭제할까요?')) return;
+            await api(`/api/projects/${id}`, { method: 'DELETE' });
+            if (currentProject && currentProject.id === id) currentProject = null;
+            await loadProjects();
+        }
+
+        async function selectProject(id) {
+            currentProject = await api(`/api/projects/${id}`);
+            document.getElementById('modeProjectName').textContent = currentProject.name;
+            showScreen('mode');
+        }
+
+        function showHome() {
+            workspaceMode = null;
+            showScreen('home');
+            loadProjects();
+        }
+
+        function showMode() {
+            workspaceMode = null;
+            if (currentProject) document.getElementById('modeProjectName').textContent = currentProject.name;
+            showScreen('mode');
+        }
+
+        function currentParticipant() {
+            if (!currentProject || !currentParticipantId) return null;
+            return (currentProject.participants || []).find(person => person.id === currentParticipantId) || null;
+        }
+
+        function docFieldsDone(doc, participant) {
+            const saved = ((participant && participant.signatures) || {})[doc.id] || {};
+            return (doc.fields || []).every(field => saved[field.id] && saved[field.id].signed);
+        }
+
+        async function enterPrep() {
+            workspaceMode = 'prep';
+            currentParticipantId = null;
+            isEditMode = true;
+            applyWorkspaceChrome();
+            showScreen('workspace');
+            renderDocList();
+            const first = (currentProject.documents || [])[0];
+            if (first) await activateDocument(first.id);
+            else clearPdfView();
+        }
+
+        async function enterLive() {
+            currentProject = await api(`/api/projects/${currentProject.id}`);
+            document.getElementById('liveProjectName').textContent = currentProject.name;
+            renderParticipants();
+            showScreen('live');
+        }
+
+        function renderParticipants() {
+            const list = document.getElementById('participantList');
+            const people = currentProject.participants || [];
+            if (!people.length) {
+                list.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">아직 피험자가 없습니다. 이름으로 추가하세요.</p>';
+                return;
+            }
+            const totalFields = (currentProject.documents || []).reduce((sum, doc) => sum + (doc.fields || []).length, 0);
+            list.innerHTML = people.map(person => {
+                const signed = (currentProject.documents || []).reduce((sum, doc) => {
+                    const saved = (person.signatures || {})[doc.id] || {};
+                    return sum + (doc.fields || []).filter(field => saved[field.id] && saved[field.id].signed).length;
+                }, 0);
+                const state = person.confirmed ? '확인 완료' : (totalFields && signed >= totalFields ? '확인 대기' : `서명 ${signed}/${totalFields}`);
+                return `
+                    <button onclick="openParticipant('${person.id}')" class="w-full text-left border border-emerald-200 rounded-xl p-3 hover:bg-emerald-50">
+                        <span class="block font-bold text-sm">${escapeHtml(person.name)}</span>
+                        <span class="block text-[11px] text-emerald-700 mt-0.5">${state}</span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        async function createParticipant() {
+            const name = document.getElementById('newParticipantName').value.trim();
+            if (!name) return;
+            currentProject = await api(`/api/projects/${currentProject.id}/participants`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            document.getElementById('newParticipantName').value = '';
+            const created = currentProject.participants[currentProject.participants.length - 1];
+            await openParticipant(created.id);
+        }
+
+        async function openParticipant(participantId) {
+            currentProject = await api(`/api/projects/${currentProject.id}`);
+            currentParticipantId = participantId;
+            workspaceMode = 'live';
+            isEditMode = false;
+            applyWorkspaceChrome();
+            const person = currentParticipant();
+            document.getElementById('pName').value = person ? person.name : '';
+            syncParticipant();
+            showScreen('workspace');
+            renderDocList();
+            const docs = currentProject.documents || [];
+            const next = docs.find(doc => !docFieldsDone(doc, person)) || docs[0];
+            if (next) {
+                await activateDocument(next.id);
+                await maybeAdvanceDocument();
+            } else clearPdfView();
+            updateConfirmButton();
+        }
+
+        function applyWorkspaceChrome() {
+            const prep = workspaceMode === 'prep';
+            document.getElementById('prepUpload').classList.toggle('hidden', !prep);
+            document.getElementById('docListLive').classList.toggle('hidden', prep);
+            document.getElementById('editModeTools').classList.toggle('hidden', !prep);
+            document.getElementById('liveModeStatus').classList.toggle('hidden', prep);
+            document.getElementById('participantCard').classList.toggle('hidden', prep);
+            document.getElementById('btnDownload').classList.toggle('hidden', prep);
+            const banner = document.getElementById('workspaceBanner');
+            banner.className = prep
+                ? 'rounded-2xl p-4 border-2 border-amber-300 bg-amber-50'
+                : 'rounded-2xl p-4 border-2 border-emerald-400 bg-emerald-50';
+            document.getElementById('workspaceKicker').className = prep ? 'text-[11px] font-bold text-amber-700' : 'text-[11px] font-bold text-emerald-700';
+            document.getElementById('workspaceKicker').textContent = prep ? '실험 전' : '실험 중';
+            document.getElementById('workspaceTitle').textContent = prep ? '서명란 배치' : (currentParticipant() ? currentParticipant().name : '서명 진행');
+            document.getElementById('workspaceHint').className = prep ? 'text-[11px] text-amber-800 mt-1 leading-relaxed' : 'text-[11px] text-emerald-800 mt-1 leading-relaxed';
+            document.getElementById('workspaceHint').textContent = prep
+                ? '여러 PDF의 서명란 위치를 조정하면 프로젝트 JSON에 저장됩니다.'
+                : 'iPad에서 서명이 끝나면 다음 서명란, 다음 PDF로 넘어갑니다.';
+            document.getElementById('editorHeading').textContent = prep ? '서명란 위치와 크기' : '서명 진행';
+            showScreen('workspace');
+        }
+
+        function leaveWorkspace() {
+            if (workspaceMode === 'live') enterLive();
+            else showMode();
+        }
+
+        function renderDocList() {
+            const docs = (currentProject && currentProject.documents) || [];
+            const html = docs.map(doc => {
+                const active = doc.id === currentDocumentId;
+                const person = currentParticipant();
+                const done = workspaceMode === 'live' && person ? docFieldsDone(doc, person) : false;
+                return `<button onclick="activateDocument('${doc.id}')" class="w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-bold ${active ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}">${escapeHtml(doc.name)}${done ? ' · 완료' : ''}</button>`;
+            }).join('');
+            const empty = '<p class="text-[11px] text-slate-400">PDF가 없습니다.</p>';
+            document.getElementById('docList').innerHTML = docs.length ? html : empty;
+            document.getElementById('docListLiveItems').innerHTML = docs.length ? html : empty;
+        }
+
+        function clearPdfView() {
+            currentDocumentId = null;
+            fields = [];
+            pdfRawBytes = null;
+            document.getElementById('pdfPagesContainer').innerHTML = '';
+            renderDocList();
+            updateLiveModeDetail();
+        }
+
+        async function activateDocument(documentId) {
+            if (workspaceMode === 'prep' && currentDocumentId && currentDocumentId !== documentId) {
+                await saveFieldsNow();
+            }
+            const doc = (currentProject.documents || []).find(item => item.id === documentId);
+            if (!doc) return;
+            currentDocumentId = documentId;
+            const session = await api('/api/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    projectId: currentProject.id,
+                    mode: workspaceMode,
+                    participantId: currentParticipantId,
+                    documentId,
+                    date: document.getElementById('pDate').value
+                })
+            });
+            applyingRemoteFields = true;
+            fields = session.fields || [];
+            applyingRemoteFields = false;
+            const response = await fetch(`/api/projects/${currentProject.id}/documents/${documentId}/file`);
+            pdfRawBytes = new Uint8Array(await response.arrayBuffer());
+            await renderContinuousPDF(pdfRawBytes);
+            renderDocList();
+            updateConfirmButton();
+            document.getElementById('fileNameLabel').textContent = doc.name;
+        }
+
+        function rememberSignatures() {
+            const person = currentParticipant();
+            if (!person || !currentDocumentId) return;
+            if (!person.signatures) person.signatures = {};
+            if (!person.signatures[currentDocumentId]) person.signatures[currentDocumentId] = {};
+            fields.forEach(field => {
+                if (field.signed && field.img) {
+                    person.signatures[currentDocumentId][field.id] = { signed: true, img: field.img };
+                }
+            });
+        }
+
+        async function maybeAdvanceDocument() {
+            if (workspaceMode !== 'live' || advancing) return;
+            advancing = true;
+            try {
+                while (currentDocumentId && fields.every(field => field.signed)) {
+                    rememberSignatures();
+                    const docs = currentProject.documents || [];
+                    const index = docs.findIndex(doc => doc.id === currentDocumentId);
+                    const later = docs.slice(index + 1).concat(docs.slice(0, index));
+                    const next = later.find(doc => !docFieldsDone(doc, currentParticipant()));
+                    if (!next) break;
+                    await activateDocument(next.id);
+                }
+                updateConfirmButton();
+                updateLiveModeDetail();
+            } finally {
+                advancing = false;
+            }
+        }
+
+        function updateConfirmButton() {
+            const button = document.getElementById('btnConfirm');
+            const person = currentParticipant();
+            const docs = (currentProject && currentProject.documents) || [];
+            const ready = workspaceMode === 'live' && person && !person.confirmed && docs.length > 0 && docs.every(doc => {
+                if (doc.id === currentDocumentId) return fields.every(field => field.signed);
+                return docFieldsDone(doc, person);
+            });
+            button.classList.toggle('hidden', !ready);
+            button.textContent = person && person.confirmed ? '확인 완료' : '확인';
+            button.disabled = !!(person && person.confirmed);
+        }
+
+        async function confirmParticipant() {
+            const person = currentParticipant();
+            if (!person) return;
+            currentProject = await api(`/api/projects/${currentProject.id}/participants/${person.id}/confirm`, { method: 'POST' });
+            currentParticipantId = person.id;
+            updateConfirmButton();
+            document.getElementById('workspaceHint').textContent = `${person.name} 서명을 확인했습니다.`;
+        }
+
+        function initWebSocket() {
+            const loc = window.location;
+            ws = new WebSocket(`ws://${loc.host}/ws`);
+            ws.onopen = () => { if (workspaceMode === 'live') sendRegions(); };
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'FIELDS_UPDATED' || msg.type === 'SIGNATURE_RECEIVED') {
+                    const nextFields = msg.fields || (msg.data && msg.data.fields);
+                    if (nextFields && !fieldDragActive && !applyingRemoteFields) {
+                        fields = nextFields;
+                        renderFieldOverlays();
+                    }
+                    if (msg.type === 'SIGNATURE_RECEIVED' && msg.field_id && workspaceMode === 'live') {
+                        const signedBox = document.querySelector(`.draggable-field[data-field-id="${CSS.escape(msg.field_id)}"]`);
+                        if (signedBox) signedBox.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                        rememberSignatures();
+                        maybeAdvanceDocument();
+                    }
+                }
+            };
+        }
+
+        function sendFields() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'UPDATE_FIELDS', fields: fields }));
+            }
+            sendRegions();
+            if (workspaceMode === 'prep') scheduleSaveFields();
+        }
+
+        function fieldGeometry(list = fields) {
+            return list.map(field => ({
+                id: field.id,
+                page: field.page,
+                x: field.x,
+                y: field.y,
+                width: field.width,
+                height: field.height,
+                label: field.label || '참여자 서명'
+            }));
+        }
+
+        function scheduleSaveFields() {
+            if (workspaceMode !== 'prep' || !currentProject || !currentDocumentId) return;
+            const projectId = currentProject.id;
+            const documentId = currentDocumentId;
+            const payload = fieldGeometry();
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => saveFieldsNow(projectId, documentId, payload), 400);
+        }
+
+        async function saveFieldsNow(projectId = currentProject && currentProject.id, documentId = currentDocumentId, payload = fieldGeometry()) {
+            if (workspaceMode !== 'prep' || !projectId || !documentId) return;
+            clearTimeout(saveTimer);
+            saveTimer = null;
+            const saved = await api(`/api/projects/${projectId}/documents/${documentId}/fields`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fields: payload })
+            });
+            const selected = currentDocumentId;
+            const participantId = currentParticipantId;
+            currentProject = saved;
+            currentDocumentId = selected;
+            currentParticipantId = participantId;
+        }
+
+        function orderedFields(list = fields) {
+            return [...list].sort((a, b) => (
+                (Number(a.page) - Number(b.page))
+                || (Number(a.y) - Number(b.y))
+                || (Number(a.x) - Number(b.x))
+            ));
+        }
+
+        function nextUnsignedField(list = fields) {
+            return orderedFields(list).find(field => !field.signed) || null;
+        }
+
+        async function captureFieldRegion(field, cache) {
+            const pageNum = Number(field.page);
+            if (!pdfDoc || pageNum < 1 || pageNum > pdfDoc.numPages) return null;
+            const scale = 2.5;
+            let full = cache.get(pageNum);
+            if (!full) {
+                const page = await pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale });
+                full = document.createElement('canvas');
+                full.width = Math.ceil(viewport.width);
+                full.height = Math.ceil(viewport.height);
+                await page.render({ canvasContext: full.getContext('2d'), viewport }).promise;
+                cache.set(pageNum, full);
+            }
+            const sw = Math.max(1, (Number(field.width) / 100) * full.width);
+            const sh = Math.max(1, (Number(field.height) / 100) * full.height);
+            const sx = (Number(field.x) / 100) * full.width;
+            const sy = (Number(field.y) / 100) * full.height;
+            const out = document.createElement('canvas');
+            out.width = Math.max(1, Math.round(sw));
+            out.height = Math.max(1, Math.round(sh));
+            out.getContext('2d').drawImage(full, sx, sy, sw, sh, 0, 0, out.width, out.height);
+            return { image: out.toDataURL('image/jpeg', 0.82), aspect: out.width / out.height };
+        }
+
+        async function sendRegions() {
+            if (!pdfDoc || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const token = ++regionSendToken;
+            const snapshot = fields.map(field => ({ ...field }));
+            await enqueuePdfJob(async () => {
+                if (token !== regionSendToken || !pdfDoc || !ws || ws.readyState !== WebSocket.OPEN) return;
+                const cache = new Map();
+                const regions = {};
+                for (const field of snapshot) {
+                    try {
+                        const region = await captureFieldRegion(field, cache);
+                        if (region) regions[field.id] = region;
+                    } catch (error) {
+                        console.warn(error);
+                    }
+                }
+                if (token !== regionSendToken || !ws || ws.readyState !== WebSocket.OPEN) return;
+                ws.send(JSON.stringify({ type: 'UPDATE_REGIONS', regions }));
+            });
+        }
+
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            event.target.value = '';
+            if (!file || !currentProject || workspaceMode !== 'prep') return;
+            document.getElementById('fileNameLabel').textContent = file.name;
+            currentProject = await api(`/api/projects/${currentProject.id}/documents?name=${encodeURIComponent(file.name)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/pdf' },
+                body: file
+            });
+            const added = currentProject.documents[currentProject.documents.length - 1];
+            await activateDocument(added.id);
+        }
+
+        async function loadSamplePDF() {
+            const pdfDocLib = await PDFLib.PDFDocument.create();
+            let page1 = pdfDocLib.addPage([595, 842]);
+            page1.drawText("IRB Consent Form (Sample)", { x: 50, y: 780, size: 20 });
+            page1.drawText("Page 1", { x: 50, y: 740, size: 12 });
+            
+            let page2 = pdfDocLib.addPage([595, 842]);
+            page2.drawText("Page 2 - signature area", { x: 50, y: 780, size: 16 });
+
+            pdfRawBytes = await pdfDocLib.save();
+            await renderContinuousPDF(pdfRawBytes);
+        }
+
+        async function renderContinuousPDF(bytes) {
+            await enqueuePdfJob(async () => {
+                const loading = pdfjsLib.getDocument({ data: bytes.slice(0) });
+                pdfDoc = await loading.promise;
+                const container = document.getElementById('pdfPagesContainer');
+                container.innerHTML = '';
+
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.2 });
+
+                    const pageWrapper = document.createElement('div');
+                    pageWrapper.className = 'relative bg-white shadow-lg rounded-lg overflow-hidden page-wrapper';
+                    pageWrapper.dataset.pageNum = i;
+                    pageWrapper.style.width = `${viewport.width}px`;
+                    pageWrapper.style.height = `${viewport.height}px`;
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    const ctx = canvas.getContext('2d');
+
+                    pageWrapper.appendChild(canvas);
+                    container.appendChild(pageWrapper);
+                    await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+                }
+                renderFieldOverlays();
+            });
+            sendRegions();
+        }
+
+        function updateLiveModeDetail() {
+            const detail = document.getElementById('liveModeDetail');
+            if (!detail) return;
+            const ordered = orderedFields();
+            const active = nextUnsignedField();
+            if (!ordered.length) {
+                detail.textContent = '서명란이 없습니다. 실험 전 모드에서 서명란을 추가해 주세요.';
+                return;
+            }
+            const done = ordered.filter(field => field.signed).length;
+            if (!active) {
+                detail.textContent = `모든 서명이 완료되었습니다. (${done}/${ordered.length})`;
+                return;
+            }
+            const index = ordered.findIndex(field => field.id === active.id) + 1;
+            detail.textContent = `iPad는 ${index}/${ordered.length}번째 서명란을 보고 있습니다. ${active.page}페이지. 전송되면 다음 서명란으로 넘어갑니다.`;
+        }
+
+        function renderFieldOverlays() {
+            document.querySelectorAll('.draggable-field').forEach(el => el.remove());
+            document.querySelectorAll('.page-wrapper.drop-target').forEach(el => el.classList.remove('drop-target'));
+            const active = isEditMode ? null : nextUnsignedField();
+
+            fields.forEach(f => {
+                const pageWrapper = document.querySelector(`.page-wrapper[data-page-num="${f.page}"]`);
+                if (!pageWrapper) return;
+                const isActive = !!(active && active.id === f.id);
+
+                const box = document.createElement('div');
+                box.className = `draggable-field ${isEditMode ? 'edit-mode' : ''} ${f.signed ? 'signed' : ''} ${isActive ? 'active-target' : ''}`;
+                box.dataset.fieldId = f.id;
+                box.style.left = `${f.x}%`;
+                box.style.top = `${f.y}%`;
+                box.style.width = `${f.width}%`;
+                box.style.height = `${f.height}%`;
+
+                const content = document.createElement('div');
+                content.className = `field-content flex items-center justify-center text-center text-xs font-bold px-2 ${isEditMode ? 'text-red-700' : isActive ? 'text-amber-800' : 'text-brand-600'}`;
+                if (f.signed && f.img) {
+                    content.innerHTML = `<img src="${f.img}" alt="서명" class="w-full h-full object-fill">`;
+                } else if (isEditMode) {
+                    content.textContent = '드래그하여 이동';
+                    content.style.paddingRight = '36px';
+                } else if (isActive) {
+                    content.textContent = 'iPad에 표시 중';
+                } else {
+                    content.textContent = '대기';
+                }
+                box.appendChild(content);
+
+                if (isEditMode) {
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.type = 'button';
+                    deleteBtn.className = 'field-delete-btn';
+                    deleteBtn.textContent = '삭제';
+                    deleteBtn.title = '이 서명란 삭제';
+                    deleteBtn.addEventListener('mousedown', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                    });
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteField(f.id);
+                    });
+                    box.appendChild(deleteBtn);
+
+                    const handle = document.createElement('div');
+                    handle.className = 'resize-handle';
+                    box.appendChild(handle);
+                    makeDraggableAndResizable(box, f);
+                }
+
+                pageWrapper.appendChild(box);
+            });
+            updateVisiblePageHint();
+            updateLiveModeDetail();
+        }
+
+        function toggleEditMode() {
+            return;
+        }
+
+        function roundPct(value) {
+            return Math.round(value * 100) / 100;
+        }
+
+        function findDropPage(clientX, clientY) {
+            const hit = document.elementFromPoint(clientX, clientY);
+            const direct = hit && hit.closest ? hit.closest('.page-wrapper') : null;
+            if (direct) return direct;
+
+            const pages = [...document.querySelectorAll('.page-wrapper')];
+            let best = null;
+            let bestDist = Infinity;
+            pages.forEach((page) => {
+                const rect = page.getBoundingClientRect();
+                const dx = clientX < rect.left ? rect.left - clientX : clientX > rect.right ? clientX - rect.right : 0;
+                const dy = clientY < rect.top ? rect.top - clientY : clientY > rect.bottom ? clientY - rect.bottom : 0;
+                const dist = dx * dx + dy * dy;
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    best = page;
+                }
+            });
+            return best;
+        }
+
+        function setDropTarget(page) {
+            document.querySelectorAll('.page-wrapper.drop-target').forEach(el => {
+                if (el !== page) el.classList.remove('drop-target');
+            });
+            if (page) page.classList.add('drop-target');
+        }
+
+        function getMostVisiblePageNumber() {
+            const scroller = document.getElementById('pdfScrollWrapper');
+            if (!scroller) return 1;
+            const view = scroller.getBoundingClientRect();
+            let bestNum = 1;
+            let bestArea = -1;
+            document.querySelectorAll('.page-wrapper').forEach((page) => {
+                const rect = page.getBoundingClientRect();
+                const width = Math.max(0, Math.min(rect.right, view.right) - Math.max(rect.left, view.left));
+                const height = Math.max(0, Math.min(rect.bottom, view.bottom) - Math.max(rect.top, view.top));
+                const area = width * height;
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestNum = Number(page.dataset.pageNum) || 1;
+                }
+            });
+            return bestNum;
+        }
+
+        function updateVisiblePageHint() {
+            const label = document.getElementById('visiblePageLabel');
+            if (!label) return;
+            const pages = document.querySelectorAll('.page-wrapper');
+            label.textContent = pages.length ? String(getMostVisiblePageNumber()) : '-';
+        }
+
+        function nextFieldId() {
+            let max = 0;
+            const pool = [...fields];
+            ((currentProject && currentProject.documents) || []).forEach(doc => {
+                (doc.fields || []).forEach(field => pool.push(field));
+            });
+            pool.forEach(field => {
+                const match = String(field.id || '').match(/(\d+)$/);
+                if (match) max = Math.max(max, Number(match[1]));
+            });
+            return 'sig_' + (max + 1);
+        }
+
+        function deleteField(id) {
+            fields = fields.filter(f => f.id !== id);
+            renderFieldOverlays();
+            sendFields();
+        }
+
+        function makeDraggableAndResizable(element, fieldObj) {
+            let startX, startY, initialWidth, initialHeight;
+            const handle = element.querySelector('.resize-handle');
+
+            element.onmousedown = (e) => {
+                if (e.button !== 0) return;
+                if (e.target.closest('.field-delete-btn') || e.target.closest('.resize-handle')) return;
+                e.preventDefault();
+
+                const rect = element.getBoundingClientRect();
+                const grabX = e.clientX - rect.left;
+                const grabY = e.clientY - rect.top;
+                const widthPx = rect.width;
+                const heightPx = rect.height;
+                let lastX = e.clientX;
+                let lastY = e.clientY;
+
+                fieldDragActive = true;
+                element.classList.add('is-dragging');
+                element.style.position = 'fixed';
+                element.style.left = `${rect.left}px`;
+                element.style.top = `${rect.top}px`;
+                element.style.width = `${widthPx}px`;
+                element.style.height = `${heightPx}px`;
+                element.style.margin = '0';
+                document.body.appendChild(element);
+                setDropTarget(findDropPage(e.clientX, e.clientY));
+
+                const onMove = (ev) => {
+                    ev.preventDefault();
+                    lastX = ev.clientX;
+                    lastY = ev.clientY;
+                    element.style.left = `${ev.clientX - grabX}px`;
+                    element.style.top = `${ev.clientY - grabY}px`;
+                    setDropTarget(findDropPage(ev.clientX, ev.clientY));
+                };
+
+                let scrollFrame = 0;
+                const scrollStep = () => {
+                    if (!fieldDragActive) return;
+                    const scroller = document.getElementById('pdfScrollWrapper');
+                    const view = scroller.getBoundingClientRect();
+                    const margin = 72;
+                    if (lastY < view.top + margin) {
+                        scroller.scrollTop -= Math.max(8, Math.ceil((view.top + margin - lastY) / 3));
+                    } else if (lastY > view.bottom - margin) {
+                        scroller.scrollTop += Math.max(8, Math.ceil((lastY - (view.bottom - margin)) / 3));
+                    }
+                    setDropTarget(findDropPage(lastX, lastY));
+                    scrollFrame = requestAnimationFrame(scrollStep);
+                };
+                scrollFrame = requestAnimationFrame(scrollStep);
+
+                let dragEnded = false;
+                const onUp = (ev) => {
+                    if (dragEnded) return;
+                    dragEnded = true;
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                    window.removeEventListener('blur', onUp);
+                    fieldDragActive = false;
+                    cancelAnimationFrame(scrollFrame);
+
+                    const clientX = ev && typeof ev.clientX === 'number' ? ev.clientX : lastX;
+                    const clientY = ev && typeof ev.clientY === 'number' ? ev.clientY : lastY;
+                    const dropPage = findDropPage(clientX, clientY);
+                    if (dropPage) {
+                        const parentRect = dropPage.getBoundingClientRect();
+                        const boxW = Math.min(widthPx, parentRect.width);
+                        const boxH = Math.min(heightPx, parentRect.height);
+                        const leftPx = Math.max(0, Math.min(parentRect.width - boxW, clientX - grabX - parentRect.left));
+                        const topPx = Math.max(0, Math.min(parentRect.height - boxH, clientY - grabY - parentRect.top));
+                        fieldObj.page = Number(dropPage.dataset.pageNum);
+                        fieldObj.x = roundPct((leftPx / parentRect.width) * 100);
+                        fieldObj.y = roundPct((topPx / parentRect.height) * 100);
+                        fieldObj.width = roundPct((boxW / parentRect.width) * 100);
+                        fieldObj.height = roundPct((boxH / parentRect.height) * 100);
+                    }
+
+                    renderFieldOverlays();
+                    sendFields();
+                };
+
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                window.addEventListener('blur', onUp);
+            };
+
+            if (handle) {
+                handle.onmousedown = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startX = e.clientX;
+                    startY = e.clientY;
+                    const parentRect = element.parentElement.getBoundingClientRect();
+                    initialWidth = element.offsetWidth;
+                    initialHeight = element.offsetHeight;
+
+                    document.onmousemove = (e) => {
+                        e.preventDefault();
+                        let dx = e.clientX - startX;
+                        let dy = e.clientY - startY;
+
+                        let newWidth = ((initialWidth + dx) / parentRect.width) * 100;
+                        let newHeight = ((initialHeight + dy) / parentRect.height) * 100;
+
+                        fieldObj.width = Math.max(5, Math.min(100 - fieldObj.x, newWidth));
+                        fieldObj.height = Math.max(3, Math.min(100 - fieldObj.y, newHeight));
+
+                        element.style.width = `${fieldObj.width}%`;
+                        element.style.height = `${fieldObj.height}%`;
+                    };
+
+                    document.onmouseup = () => {
+                        document.onmousemove = null;
+                        document.onmouseup = null;
+                        sendFields();
+                    };
+                };
+            }
+        }
+
+        function addNewField() {
+            if (!currentDocumentId) return;
+            const pageNum = getMostVisiblePageNumber();
+            const pageEl = document.querySelector(`.page-wrapper[data-page-num="${pageNum}"]`);
+            const width = 30;
+            const height = 10;
+            let x = 35;
+            let y = 40;
+
+            if (pageEl) {
+                const view = document.getElementById('pdfScrollWrapper').getBoundingClientRect();
+                const rect = pageEl.getBoundingClientRect();
+                const visibleLeft = Math.max(rect.left, view.left);
+                const visibleRight = Math.min(rect.right, view.right);
+                const visibleTop = Math.max(rect.top, view.top);
+                const visibleBottom = Math.min(rect.bottom, view.bottom);
+                if (visibleRight > visibleLeft && visibleBottom > visibleTop) {
+                    const centerX = ((visibleLeft + visibleRight) / 2 - rect.left) / rect.width * 100;
+                    const centerY = ((visibleTop + visibleBottom) / 2 - rect.top) / rect.height * 100;
+                    x = centerX - width / 2;
+                    y = centerY - height / 2;
+                }
+            }
+
+            const offset = (fields.filter(f => Number(f.page) === pageNum).length % 4) * 4;
+            x = roundPct(Math.max(0, Math.min(100 - width, x + offset)));
+            y = roundPct(Math.max(0, Math.min(100 - height, y + offset)));
+
+            fields.push({
+                id: nextFieldId(),
+                page: pageNum,
+                x,
+                y,
+                width,
+                height,
+                label: '참여자 서명',
+                signed: false,
+                img: null
+            });
+            renderFieldOverlays();
+            sendFields();
+        }
+
+        function syncParticipant() {
+            const name = document.getElementById('pName').value;
+            const date = document.getElementById('pDate').value;
+            ws.send(JSON.stringify({ type: 'UPDATE_PARTICIPANT', participant: { name, date } }));
+        }
+
+        async function downloadFinalPDF() {
+            if (!pdfRawBytes) return;
+            const pdfDocLib = await PDFLib.PDFDocument.load(pdfRawBytes);
+            const pages = pdfDocLib.getPages();
+
+            for (let f of fields) {
+                if (f.signed && f.img) {
+                    const page = pages[f.page - 1];
+                    if (!page) continue;
+                    const { width, height } = page.getSize();
+                    const imgBytes = await fetch(f.img).then(res => res.arrayBuffer());
+                    const embeddedImg = await pdfDocLib.embedPng(imgBytes);
+
+                    const pdfX = (f.x / 100) * width;
+                    const pdfY = height - ((f.y / 100) * height) - ((f.height / 100) * height);
+                    const pdfW = (f.width / 100) * width;
+                    const pdfH = (f.height / 100) * height;
+
+                    page.drawImage(embeddedImg, { x: pdfX, y: pdfY, width: pdfW, height: pdfH });
+                }
+            }
+
+            const pdfBytes = await pdfDocLib.save();
+            const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `Signed_IRB_Consent.pdf`;
+            link.click();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>IRB Consent - iPad Signature Pad</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: { extend: { colors: { brand: { 600: '#2A52BE', 700: '#1d3bb3' } } } }
+        }
+    </script>
+    <style>
+        body { touch-action: none; }
+        canvas { touch-action: none; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col justify-center items-center p-4">
+
+    <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col">
+        <div class="bg-brand-600 text-white p-5 flex justify-between items-center">
+            <div>
+                <span class="text-[10px] bg-white/20 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">iPad 서명 패드</span>
+                <h1 class="text-lg font-bold mt-1">연구 참여 동의서 서명</h1>
+            </div>
+            <div class="text-right text-xs text-blue-100">
+                <span id="pNameDisplay" class="font-bold text-white block">홍길동 님</span>
+                <span id="connectionText" class="text-[10px]">PC와 실시간 연결됨</span>
+            </div>
+        </div>
+
+        <div class="p-6 flex flex-col items-center">
+            <p id="fieldProgress" class="w-full text-xs font-bold text-slate-500 mb-3">서명란을 불러오는 중</p>
+            <div id="padStage" class="w-full flex justify-center">
+                <div id="padFrame" class="relative bg-white border-2 border-slate-300 rounded-2xl overflow-hidden" style="width:100%; height:18rem;">
+                    <img id="regionImage" alt="" class="w-full h-full object-fill block select-none pointer-events-none bg-white">
+                    <canvas id="padCanvas" class="absolute inset-0 w-full h-full cursor-crosshair"></canvas>
+                    <div id="guideText" class="absolute bottom-2 left-2 right-2 pointer-events-none text-center">
+                        <span class="text-[11px] font-medium text-slate-600 bg-white/85 px-2 py-1 rounded-full">이 영역 안에 서명해 주세요</span>
+                    </div>
+                </div>
+            </div>
+            <div id="emptyState" class="hidden w-full rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 text-sm font-medium text-center px-4 py-10">
+                서명란을 불러오는 중
+            </div>
+
+            <div id="padActions" class="w-full flex justify-between items-center mt-4">
+                <button onclick="clearCanvas()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 flex items-center space-x-1">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    <span>지우기</span>
+                </button>
+                <button id="sendBtn" onclick="sendSignature()" class="px-6 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 shadow-md flex items-center space-x-2">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    <span>서명 전송</span>
+                </button>
+            </div>
+            <p id="padStatus" class="text-[11px] text-slate-500 mt-3 text-center"></p>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+        let canvas, ctx, isDrawing = false;
+        let currentFields = [];
+        let regions = {};
+        let activeFieldId = null;
+        let shownRegion = '';
+        let documentName = '';
+        let sessionMode = '';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            canvas = document.getElementById('padCanvas');
+            ctx = canvas.getContext('2d');
+            document.getElementById('regionImage').addEventListener('load', layoutPadSurface);
+            window.addEventListener('resize', layoutPadSurface);
+            attachListeners();
+            initWebSocket();
+        });
+
+        function orderedFields(list = currentFields) {
+            return [...list].sort((a, b) => (
+                (Number(a.page) - Number(b.page))
+                || (Number(a.y) - Number(b.y))
+                || (Number(a.x) - Number(b.x))
+            ));
+        }
+
+        function nextUnsigned(list = currentFields) {
+            return orderedFields(list).find(field => !field.signed) || null;
+        }
+
+        function resizeCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width < 2 || rect.height < 2) return;
+            const ratio = window.devicePixelRatio || 2;
+            const nextWidth = Math.round(rect.width * ratio);
+            const nextHeight = Math.round(rect.height * ratio);
+            if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+            canvas.width = nextWidth;
+            canvas.height = nextHeight;
+            ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = '#0F172A';
+            ctx.lineWidth = 2.5;
+        }
+
+        function layoutPadSurface() {
+            const stage = document.getElementById('padStage');
+            const frame = document.getElementById('padFrame');
+            const img = document.getElementById('regionImage');
+            if (!stage || stage.classList.contains('hidden') || !frame) return;
+            let aspect = Number(frame.dataset.aspect);
+            if (img.naturalWidth && img.naturalHeight) aspect = img.naturalWidth / img.naturalHeight;
+            if (!aspect || !Number.isFinite(aspect)) aspect = 3;
+            const maxWidth = stage.clientWidth || 320;
+            const maxHeight = Math.max(160, window.innerHeight * 0.62);
+            let width = maxWidth;
+            let height = width / aspect;
+            if (height > maxHeight) {
+                height = maxHeight;
+                width = height * aspect;
+            }
+            frame.style.width = `${width}px`;
+            frame.style.height = `${height}px`;
+            resizeCanvas();
+        }
+
+        function initWebSocket() {
+            const loc = window.location;
+            ws = new WebSocket(`ws://${loc.host}/ws`);
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'INIT_STATE') {
+                    const data = msg.data || {};
+                    currentFields = data.fields || msg.fields || [];
+                    regions = data.regions || {};
+                    if (data.participant && data.participant.name) {
+                        document.getElementById('pNameDisplay').textContent = `${data.participant.name} 님`;
+                    }
+                    applyState();
+                } else if (msg.type === 'SESSION') {
+                    currentFields = msg.fields || [];
+                    regions = {};
+                    shownRegion = '';
+                    activeFieldId = null;
+                    documentName = msg.documentName || '';
+                    sessionMode = msg.mode || '';
+                    if (msg.participant && msg.participant.name) {
+                        document.getElementById('pNameDisplay').textContent = `${msg.participant.name} 님`;
+                    }
+                    if (msg.mode === 'prep') {
+                        document.getElementById('padStatus').textContent = '실험 전 모드입니다. 실험 중에서 서명합니다.';
+                    }
+                    applyState();
+                } else if (msg.type === 'FIELDS_UPDATED' || msg.type === 'SIGNATURE_RECEIVED') {
+                    if (msg.fields) currentFields = msg.fields;
+                    applyState();
+                } else if (msg.type === 'REGIONS_UPDATED') {
+                    regions = msg.regions || {};
+                    applyState();
+                } else if (msg.type === 'PARTICIPANT_UPDATED') {
+                    document.getElementById('pNameDisplay').textContent = `${msg.participant.name} 님`;
+                }
+            };
+        }
+
+        function regionOf(field) {
+            if (!field) return null;
+            const region = regions[field.id];
+            if (!region) return null;
+            if (typeof region === 'string') return { image: region, aspect: 0 };
+            return region;
+        }
+
+        function applyState() {
+            const active = nextUnsigned();
+            const nextId = active ? active.id : null;
+            const changed = nextId !== activeFieldId;
+            activeFieldId = nextId;
+            const stage = document.getElementById('padStage');
+            const empty = document.getElementById('emptyState');
+            const actions = document.getElementById('padActions');
+            const progress = document.getElementById('fieldProgress');
+            const frame = document.getElementById('padFrame');
+            const ordered = orderedFields();
+            stage.dataset.activeId = nextId || '';
+
+            if (!active) {
+                stage.classList.add('hidden');
+                actions.classList.add('hidden');
+                empty.classList.remove('hidden');
+                empty.textContent = ordered.length ? '모든 서명이 완료되었습니다.' : 'PC에서 서명란을 먼저 추가해 주세요.';
+                progress.textContent = ordered.length ? `완료 ${ordered.length}/${ordered.length}` : '서명란 없음';
+                document.getElementById('padStatus').textContent = ordered.length ? '모든 서명란을 전송했습니다.' : '';
+                return;
+            }
+
+            stage.classList.remove('hidden');
+            actions.classList.remove('hidden');
+            empty.classList.add('hidden');
+            const index = ordered.findIndex(field => field.id === active.id) + 1;
+            const docLabel = documentName ? `${documentName} · ` : '';
+            progress.textContent = `${docLabel}서명 ${index}/${ordered.length} · ${active.page}페이지`;
+            const region = regionOf(active);
+            if (region && region.aspect) frame.dataset.aspect = String(region.aspect);
+            const image = region && region.image ? region.image : '';
+            const img = document.getElementById('regionImage');
+            if (image !== shownRegion) {
+                shownRegion = image;
+                img.src = image;
+                if (!changed) clearCanvas();
+            }
+            if (changed) {
+                clearCanvas();
+                document.getElementById('padStatus').textContent = index === 1 ? '표시된 서명란 영역 안에 서명해 주세요.' : '다음 서명란입니다. 이 영역 안에 서명해 주세요.';
+            }
+            layoutPadSurface();
+        }
+
+        function attachListeners() {
+            let lastX = 0, lastY = 0;
+            function getPos(e) {
+                const rect = canvas.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                return { x: clientX - rect.left, y: clientY - rect.top };
+            }
+
+            function start(e) {
+                e.preventDefault();
+                isDrawing = true;
+                document.getElementById('guideText').classList.add('hidden');
+                const pos = getPos(e);
+                lastX = pos.x; lastY = pos.y;
+            }
+
+            function draw(e) {
+                if (!isDrawing) return;
+                e.preventDefault();
+                const pos = getPos(e);
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+                ctx.lineTo(pos.x, pos.y);
+                ctx.stroke();
+                lastX = pos.x; lastY = pos.y;
+            }
+
+            function stop() { isDrawing = false; }
+
+            canvas.addEventListener('mousedown', start);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stop);
+            canvas.addEventListener('touchstart', start, { passive: false });
+            canvas.addEventListener('touchmove', draw, { passive: false });
+            canvas.addEventListener('touchend', stop);
+        }
+
+        function clearCanvas() {
+            const rect = canvas.getBoundingClientRect();
+            ctx.clearRect(0, 0, rect.width, rect.height);
+            document.getElementById('guideText').classList.remove('hidden');
+        }
+
+        function sendSignature() {
+            if (sessionMode === 'prep') {
+                document.getElementById('padStatus').textContent = '실험 전 모드에서는 배치만 합니다. 실험 중에서 서명해 주세요.';
+                return;
+            }
+            const targetField = nextUnsigned();
+            if (!targetField) {
+                document.getElementById('padStatus').textContent = 'PC에서 서명란을 먼저 추가해 주세요.';
+                return;
+            }
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                document.getElementById('padStatus').textContent = 'PC와 연결되지 않았습니다.';
+                return;
+            }
+            const imageData = canvas.toDataURL('image/png');
+            ws.send(JSON.stringify({
+                type: 'SUBMIT_SIGNATURE',
+                field_id: targetField.id,
+                image_data: imageData
+            }));
+            targetField.signed = true;
+            targetField.img = imageData;
+            applyState();
+        }
+    </script>
+</body>
+</html>
