@@ -2,61 +2,55 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>IRB Consent - iPad Signature Pad</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AUSSIS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script>
         tailwind.config = {
-            theme: { extend: { colors: { brand: { 600: '#2A52BE', 700: '#1d3bb3' } } } }
+            theme: { extend: { colors: { brand: { 600: '#4A74E6', 700: '#123088' } } } }
         }
     </script>
     <style>
-        body { touch-action: none; }
+        html, body { height: 100%; }
+        body { touch-action: manipulation; }
         canvas { touch-action: none; }
+        #padActions, #padActions button { touch-action: manipulation; }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col justify-center items-center p-4">
+<body class="h-dvh overflow-hidden bg-white text-slate-800">
 
-    <div class="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col">
-        <div class="bg-brand-600 text-white p-5 flex justify-between items-center">
-            <div>
-                <span class="text-[10px] bg-white/20 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">iPad 서명 패드</span>
-                <h1 class="text-lg font-bold mt-1">연구 참여 동의서 서명</h1>
+    <div class="h-full w-full flex flex-col">
+        <div class="shrink-0 text-white px-4 py-3 flex justify-between items-center gap-3" style="background:#4A74E6">
+            <div class="min-w-0">
+                <h1 class="font-bold leading-none">AUSSIS</h1>
+                <p class="text-[10px] font-light text-white/80 mt-1">Automated User System Signature Interface</p>
             </div>
-            <div class="text-right text-xs text-blue-100">
-                <span id="pNameDisplay" class="font-bold text-white block">홍길동 님</span>
-                <span id="connectionText" class="text-[10px]">PC와 실시간 연결됨</span>
-            </div>
+            <span id="pNameDisplay" class="text-sm font-light text-right"></span>
         </div>
 
-        <div class="p-6 flex flex-col items-center">
-            <p id="fieldProgress" class="w-full text-xs font-bold text-slate-500 mb-3">서명란을 불러오는 중</p>
-            <div id="padStage" class="w-full flex justify-center">
-                <div id="padFrame" class="relative bg-white border-2 border-slate-300 rounded-2xl overflow-hidden" style="width:100%; height:18rem;">
-                    <img id="regionImage" alt="" class="w-full h-full object-fill block select-none pointer-events-none bg-white">
-                    <canvas id="padCanvas" class="absolute inset-0 w-full h-full cursor-crosshair"></canvas>
-                    <div id="guideText" class="absolute bottom-2 left-2 right-2 pointer-events-none text-center">
-                        <span class="text-[11px] font-medium text-slate-600 bg-white/85 px-2 py-1 rounded-full">이 영역 안에 서명해 주세요</span>
-                    </div>
-                </div>
+        <p id="fieldProgress" class="shrink-0 px-4 pt-3 text-xs font-bold text-slate-500">서명란을 불러오는 중</p>
+        <div id="padStage" class="flex-1 min-h-0 overflow-hidden flex items-center justify-center">
+            <div id="padFrame" class="relative bg-white border-2 border-slate-300 rounded-2xl overflow-hidden" style="width:95vw; height:12rem;">
+                <img id="regionImage" alt="" class="w-full h-full object-fill block select-none pointer-events-none bg-white">
+                <canvas id="padCanvas" class="absolute inset-0 w-full h-full"></canvas>
             </div>
-            <div id="emptyState" class="hidden w-full rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 text-slate-500 text-sm font-medium text-center px-4 py-10">
-                서명란을 불러오는 중
-            </div>
-
-            <div id="padActions" class="w-full flex justify-between items-center mt-4">
-                <button onclick="clearCanvas()" class="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-200 flex items-center space-x-1">
-                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
-                    <span>지우기</span>
-                </button>
-                <button id="sendBtn" onclick="sendSignature()" class="px-6 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-bold hover:bg-brand-700 shadow-md flex items-center space-x-2">
-                    <i data-lucide="check" class="w-4 h-4"></i>
-                    <span>서명 전송</span>
-                </button>
-            </div>
-            <p id="padStatus" class="text-[11px] text-slate-500 mt-3 text-center"></p>
         </div>
+        <div id="emptyState" class="hidden flex-1 min-h-0 flex items-center justify-center text-slate-500 text-sm font-medium text-center px-6">
+            서명란을 불러오는 중
+        </div>
+
+        <div id="padActions" class="shrink-0 px-4 pt-3 flex justify-between items-center gap-3" style="padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));">
+            <button onclick="clearCanvas()" class="px-4 py-3 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold flex items-center space-x-1">
+                <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                <span>지우기</span>
+            </button>
+            <button id="sendBtn" onclick="sendSignature()" class="px-6 py-3 bg-brand-600 text-white rounded-xl text-sm font-bold shadow-md flex items-center space-x-2">
+                <i data-lucide="check" class="w-4 h-4"></i>
+                <span>서명 전송</span>
+            </button>
+        </div>
+        <p id="padStatus" class="shrink-0 px-4 pb-2 text-[11px] text-slate-500 text-center min-h-[1rem]"></p>
     </div>
 
     <script>
@@ -115,13 +109,13 @@
             let aspect = Number(frame.dataset.aspect);
             if (img.naturalWidth && img.naturalHeight) aspect = img.naturalWidth / img.naturalHeight;
             if (!aspect || !Number.isFinite(aspect)) aspect = 3;
-            const maxWidth = stage.clientWidth || 320;
-            const maxHeight = Math.max(160, window.innerHeight * 0.62);
+            const maxWidth = Math.max(160, Math.min(window.innerWidth * 0.95, stage.clientWidth || window.innerWidth * 0.95));
+            const maxHeight = Math.max(120, stage.clientHeight - 4);
             let width = maxWidth;
             let height = width / aspect;
             if (height > maxHeight) {
                 height = maxHeight;
-                width = height * aspect;
+                width = Math.min(maxWidth, height * aspect);
             }
             frame.style.width = `${width}px`;
             frame.style.height = `${height}px`;
@@ -152,7 +146,7 @@
                         document.getElementById('pNameDisplay').textContent = `${msg.participant.name} 님`;
                     }
                     if (msg.mode === 'prep') {
-                        document.getElementById('padStatus').textContent = '실험 전 모드입니다. 실험 중에서 서명합니다.';
+                        document.getElementById('padStatus').textContent = 'PDF 설정 중입니다.';
                     }
                     applyState();
                 } else if (msg.type === 'FIELDS_UPDATED' || msg.type === 'SIGNATURE_RECEIVED') {
@@ -232,7 +226,6 @@
             function start(e) {
                 e.preventDefault();
                 isDrawing = true;
-                document.getElementById('guideText').classList.add('hidden');
                 const pos = getPos(e);
                 lastX = pos.x; lastY = pos.y;
             }
@@ -261,12 +254,11 @@
         function clearCanvas() {
             const rect = canvas.getBoundingClientRect();
             ctx.clearRect(0, 0, rect.width, rect.height);
-            document.getElementById('guideText').classList.remove('hidden');
         }
 
         function sendSignature() {
             if (sessionMode === 'prep') {
-                document.getElementById('padStatus').textContent = '실험 전 모드에서는 배치만 합니다. 실험 중에서 서명해 주세요.';
+                document.getElementById('padStatus').textContent = 'PDF 설정 중에는 서명하지 않습니다.';
                 return;
             }
             const targetField = nextUnsigned();

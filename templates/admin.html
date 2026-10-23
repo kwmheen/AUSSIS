@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>IRB Consent System - PC Admin</title>
+    <title>AUSSIS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
@@ -88,36 +88,35 @@
             outline-offset: 3px;
         }
         .draggable-field.active-target {
-            border: 2px solid #d97706;
-            background: rgba(245, 158, 11, 0.16);
-            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35);
+            border: 2px solid #4A74E6;
+            background: rgba(74, 116, 230, 0.16);
+            box-shadow: 0 0 0 3px rgba(74, 116, 230, 0.35);
         }
+        .prep-solid { background: #123088; color: #fff; }
+        .prep-solid:hover { background: #0d2468; }
+        .prep-soft { background: #e8edf7; color: #123088; border-color: #123088; }
+        .prep-text { color: #123088; }
+        .live-solid { background: #4A74E6; color: #fff; }
+        .live-solid:hover { background: #3a62d0; }
+        .live-soft { background: #eef3fd; color: #123088; border-color: #4A74E6; }
+        .live-text { color: #4A74E6; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col font-sans">
-    <header class="bg-brand-600 text-white shadow-md h-16 flex items-center px-6 justify-between sticky top-0 z-50">
-        <div class="flex items-center space-x-3">
-            <i data-lucide="monitor" class="w-6 h-6"></i>
-            <div>
-                <h1 class="font-bold text-base">IRB 동의서 시스템 (PC 관리자)</h1>
-                <p class="text-xs text-blue-100"><span id="modeBadge" class="font-bold text-white">프로젝트 선택</span></p>
-            </div>
+    <header class="text-white shadow-md flex items-center px-6 py-3 justify-between sticky top-0 z-50 gap-6" style="background:#123088">
+        <div class="min-w-0">
+            <h1 class="font-bold text-xl tracking-wide leading-none">AUSSIS</h1>
+            <p class="text-[11px] font-light text-white/80 mt-1">Automated User System Signature Interface</p>
+            <p class="text-[11px] font-light text-white/70 mt-1"><span id="modeBadge">프로젝트</span></p>
         </div>
-        <div class="flex flex-col items-end text-xs bg-brand-700/60 px-3 py-1.5 rounded-xl border border-white/20">
-            <span class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                <span>iPad 접속 주소: <strong id="padUrlText" class="underline text-white">측정 중...</strong></span>
-            </span>
-            <span id="ipv4Text" class="text-[10px] text-blue-100 mt-0.5">IPv4 측정 중</span>
-        </div>
+        <p id="padUrlText" class="text-xl font-bold leading-tight text-right break-all">측정 중...</p>
     </header>
 
     <section id="screenHome" class="flex-1 max-w-3xl w-full mx-auto p-6">
         <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
-            <h2 class="text-lg font-bold">프로젝트 선택</h2>
-            <p class="text-xs text-slate-500 mt-1">저장된 JSON 프로젝트 중 하나를 고르거나 새로 만듭니다.</p>
+            <h2 class="text-lg font-bold">프로젝트</h2>
             <div class="flex gap-2 mt-4">
-                <input id="newProjectName" type="text" placeholder="새 프로젝트 이름" class="flex-1 p-2.5 border rounded-xl text-sm">
+                <input id="newProjectName" type="text" placeholder="새 프로젝트 이름" class="flex-1 p-2.5 border rounded-xl text-sm" onkeydown="if (event.key === 'Enter') createProject()">
                 <button onclick="createProject()" class="px-4 py-2.5 bg-brand-600 text-white font-bold rounded-xl text-sm">만들기</button>
             </div>
             <div id="projectList" class="mt-5 space-y-2"></div>
@@ -125,34 +124,35 @@
     </section>
 
     <section id="screenMode" class="hidden flex-1 max-w-3xl w-full mx-auto p-6">
-        <button onclick="showHome()" class="text-xs font-bold text-slate-500 mb-3">← 프로젝트 목록</button>
-        <h2 id="modeProjectName" class="text-lg font-bold mb-1">프로젝트</h2>
-        <p class="text-xs text-slate-500 mb-4">실험 전과 실험 중은 서로 다른 화면입니다.</p>
+        <button type="button" onclick="showHome()" class="w-full text-left mb-3 px-4 py-3 rounded-xl bg-slate-100 text-sm font-bold text-slate-700">← 프로젝트 목록</button>
+        <h2 id="modeProjectName" class="text-lg font-bold mb-4">프로젝트</h2>
         <div class="grid grid-cols-2 gap-4">
-            <button onclick="enterPrep()" class="text-left bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 hover:bg-amber-100">
-                <p class="text-[11px] font-bold text-amber-700">BEFORE</p>
-                <h3 class="text-xl font-bold text-amber-950 mt-1">실험 전</h3>
-                <p class="text-xs text-amber-800 mt-2 leading-relaxed">동의서 PDF를 추가하고, 각 PDF의 서명란 위치와 크기를 정해 프로젝트 JSON에 저장합니다.</p>
+            <button onclick="enterPrep()" class="text-left prep-solid border-2 rounded-2xl p-6">
+                <h3 class="text-xl font-bold">PDF 설정</h3>
             </button>
-            <button onclick="enterLive()" class="text-left bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-5 hover:bg-emerald-100">
-                <p class="text-[11px] font-bold text-emerald-700">DURING</p>
-                <h3 class="text-xl font-bold text-emerald-950 mt-1">실험 중</h3>
-                <p class="text-xs text-emerald-800 mt-2 leading-relaxed">피험자 이름을 만들고, 그 피험자의 iPad 서명을 받습니다. 모든 PDF 서명이 끝나면 확인합니다.</p>
+            <button onclick="enterLive()" class="text-left live-solid border-2 rounded-2xl p-6">
+                <h3 class="text-xl font-bold">스터디 진행</h3>
             </button>
+        </div>
+        <div class="mt-4 bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-3">
+            <div class="flex-1 min-w-0">
+                <p class="text-xs font-bold">출력 폴더</p>
+                <p id="outputDirLabel" class="text-[11px] text-slate-500 mt-1 break-all">지정되지 않음</p>
+            </div>
+            <button type="button" onclick="pickOutputFolder()" class="shrink-0 px-3 py-2 prep-solid text-xs font-bold rounded-xl">폴더 지정</button>
         </div>
     </section>
 
     <section id="screenLive" class="hidden flex-1 max-w-3xl w-full mx-auto p-6">
-        <button onclick="showMode()" class="text-xs font-bold text-emerald-700 mb-3">← 모드 선택</button>
-        <div class="bg-emerald-700 text-white rounded-2xl p-5 shadow-sm">
-            <p class="text-[11px] font-bold text-emerald-100">실험 중</p>
-            <h2 class="text-lg font-bold mt-1">피험자 목록</h2>
-            <p id="liveProjectName" class="text-xs text-emerald-100 mt-1"></p>
+        <button type="button" onclick="showMode()" class="w-full text-left mb-3 px-4 py-3 rounded-xl live-soft border text-sm font-bold">← 모드 선택</button>
+        <div class="live-solid rounded-2xl p-5 shadow-sm">
+            <h2 class="text-lg font-bold">피험자</h2>
+            <p id="liveProjectName" class="text-xs font-light text-white/80 mt-1"></p>
         </div>
-        <div class="bg-white rounded-2xl p-5 shadow-sm border border-emerald-200 mt-4">
+        <div class="bg-white rounded-2xl p-5 shadow-sm border mt-4 live-soft">
             <div class="flex gap-2">
-                <input id="newParticipantName" type="text" placeholder="피험자 이름" class="flex-1 p-2.5 border rounded-xl text-sm">
-                <button onclick="createParticipant()" class="px-4 py-2.5 bg-emerald-600 text-white font-bold rounded-xl text-sm">피험자 추가</button>
+                <input id="newParticipantName" type="text" placeholder="피험자 이름" class="flex-1 p-2.5 border rounded-xl text-sm bg-white" onkeydown="if (event.key === 'Enter') createParticipant()">
+                <button onclick="createParticipant()" class="px-4 py-2.5 live-solid font-bold rounded-xl text-sm">피험자 추가</button>
             </div>
             <div id="participantList" class="mt-4 space-y-2"></div>
         </div>
@@ -161,68 +161,61 @@
     <main id="screenWorkspace" class="hidden flex-1 max-w-7xl w-full mx-auto p-6 gap-6">
         <!-- Sidebar Controls -->
         <div class="w-80 flex flex-col gap-4">
-            <div id="workspaceBanner" class="rounded-2xl p-4 border-2 border-amber-300 bg-amber-50">
-                <p id="workspaceKicker" class="text-[11px] font-bold text-amber-700">실험 전</p>
-                <h2 id="workspaceTitle" class="font-bold text-sm mt-1">서명란 배치</h2>
-                <p id="workspaceHint" class="text-[11px] text-amber-800 mt-1 leading-relaxed">PDF를 추가하고 서명란을 저장합니다.</p>
-                <button onclick="leaveWorkspace()" class="mt-3 text-[11px] font-bold underline">← 뒤로</button>
-            </div>
+            <button type="button" id="workspaceBanner" onclick="leaveWorkspace()" class="w-full text-left rounded-2xl p-4 border-2 prep-soft cursor-pointer">
+                <span class="block w-full text-sm font-bold">← 뒤로</span>
+                <p id="workspaceKicker" class="text-[11px] font-bold mt-2 prep-text">PDF 설정</p>
+                <h2 id="workspaceTitle" class="font-bold text-sm mt-1">서명란</h2>
+                <p id="workspaceHint" class="hidden text-[11px] mt-1 leading-relaxed"></p>
+            </button>
 
-            <div id="prepUpload" class="bg-white rounded-2xl p-5 shadow-sm border border-amber-200">
-                <h2 class="font-bold text-sm mb-3 flex items-center gap-2">
-                    <i data-lucide="upload-cloud" class="w-4 h-4 text-amber-600"></i>
+            <div id="prepUpload" class="bg-white rounded-2xl p-5 shadow-sm border prep-soft">
+                <h2 class="font-bold text-sm mb-3 flex items-center gap-2 prep-text">
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i>
                     동의서 PDF 추가
                 </h2>
-                <label class="block w-full border-2 border-dashed border-amber-300 rounded-xl p-3 text-center cursor-pointer hover:bg-amber-50 transition-all">
+                <label class="block w-full border-2 border-dashed rounded-xl p-3 text-center cursor-pointer prep-soft transition-all">
                     <input type="file" id="pdfFileInput" accept="application/pdf" class="hidden" onchange="handleFileUpload(event)">
-                    <span class="text-xs text-slate-600 font-medium block" id="fileNameLabel">PDF를 선택해 프로젝트에 저장</span>
+                    <span class="text-xs font-medium block" id="fileNameLabel">동의서 추가</span>
                 </label>
                 <div id="docList" class="mt-3 space-y-1"></div>
             </div>
 
             <!-- Mode & Editing Controls -->
-            <div id="docListLive" class="hidden bg-white rounded-2xl p-5 shadow-sm border border-emerald-200">
+            <div id="docListLive" class="hidden bg-white rounded-2xl p-5 shadow-sm border live-soft">
                 <h2 class="font-bold text-sm mb-3">이 피험자의 PDF</h2>
                 <div id="docListLiveItems" class="space-y-1"></div>
             </div>
 
             <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
-                <h2 id="editorHeading" class="font-bold text-sm mb-3">서명란 위치와 크기</h2>
+                <h2 id="editorHeading" class="font-bold text-sm mb-3">서명란</h2>
 
-                <div id="liveModeStatus" class="hidden p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs mb-2">
-                    <p class="font-bold text-emerald-800">실험 중 · iPad 서명</p>
-                    <p id="liveModeDetail" class="text-emerald-700 text-[11px] mt-1 leading-relaxed">피험자를 선택하면 서명란이 iPad에 표시됩니다.</p>
+                <div id="liveModeStatus" class="hidden p-3 live-soft border rounded-xl text-xs mb-2">
+                    <p id="liveModeDetail" class="text-[11px] leading-relaxed"></p>
                 </div>
 
-                <div id="editModeTools" class="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2 text-xs">
-                    <p class="font-bold text-amber-900">실험 전 · 배치 편집</p>
-                    <p class="text-amber-800 text-[11px] leading-relaxed">서명란을 드래그하면 다른 PDF 페이지로 옮길 수 있습니다. 화면 위·아래 가장자리로 가져가면 문서가 스크롤됩니다. 오른쪽 위 삭제로 서명란을 없앨 수 있고, 우측 하단 핸들로 크기를 조절합니다. 변경은 프로젝트 JSON에 저장됩니다.</p>
-                    <p class="text-red-700 text-[11px]">새 서명란은 지금 가장 많이 보이는 <b id="visiblePageLabel">1</b>페이지에 추가됩니다.</p>
-                    <button onclick="addNewField()" class="w-full py-1.5 bg-amber-600 text-white font-bold rounded-lg hover:bg-amber-700">
+                <div id="editModeTools" class="p-3 prep-soft border rounded-xl space-y-2 text-xs">
+                    <p class="text-[11px]"><b id="visiblePageLabel">1</b>페이지</p>
+                    <button onclick="addNewField()" class="w-full py-1.5 prep-solid font-bold rounded-lg">
                         + 새 서명란 추가
                     </button>
                 </div>
             </div>
 
             <!-- Participant Info -->
-            <button id="btnConfirm" onclick="confirmParticipant()" class="hidden w-full py-3 bg-emerald-600 text-white font-bold rounded-2xl shadow-md text-sm">확인</button>
+            <button id="btnConfirm" onclick="confirmParticipant()" class="hidden w-full py-3 live-solid font-bold rounded-2xl shadow-md text-sm">확인</button>
 
-            <div id="participantCard" class="hidden bg-white rounded-2xl p-5 shadow-sm border border-emerald-200 space-y-3 text-xs">
-                <h2 class="font-bold text-sm mb-1">실험 중 피험자</h2>
-                <div>
-                    <label class="block text-slate-500 mb-1">피험자 성명</label>
-                    <input type="text" id="pName" value="" readonly class="w-full p-2 border rounded-lg bg-slate-50">
-                </div>
-                <div>
-                    <label class="block text-slate-500 mb-1">작성 일자</label>
-                    <input type="date" id="pDate" class="w-full p-2 border rounded-lg" onchange="syncParticipant()">
-                </div>
+            <input type="hidden" id="pName" value="">
+            <input type="hidden" id="pDate" value="">
+            <div id="resetCard" class="hidden bg-white rounded-2xl p-5 shadow-sm border live-soft space-y-3 text-xs">
+                <h2 class="font-bold text-sm">다시 서명</h2>
+                <div id="resetFieldList" class="space-y-1"></div>
+                <p id="exportStatus" class="text-[11px] text-slate-500 break-all"></p>
             </div>
 
             <!-- Download -->
             <button onclick="downloadFinalPDF()" id="btnDownload" class="w-full py-3 bg-brand-600 text-white font-bold rounded-2xl shadow-md hover:bg-brand-700 transition-all flex items-center justify-center space-x-2 text-xs">
                 <i data-lucide="file-check" class="w-4 h-4"></i>
-                <span>서명 완료본 PDF 저장</span>
+                <span>PDF 저장</span>
             </button>
         </div>
 
@@ -250,6 +243,7 @@
         let advancing = false;
         let saveTimer = null;
         let applyingRemoteFields = false;
+        let exportedDocs = new Set();
 
         function enqueuePdfJob(job) {
             const run = pdfJob.then(job, job);
@@ -275,9 +269,8 @@
                 const port = location.port || host.port || '8000';
                 const url = `http://${host.ip}:${port}/pad`;
                 document.getElementById('padUrlText').textContent = url;
-                document.getElementById('ipv4Text').textContent = `IPv4 ${host.ip}`;
             } catch (error) {
-                document.getElementById('ipv4Text').textContent = 'IPv4를 읽지 못했습니다.';
+                document.getElementById('padUrlText').textContent = '주소를 읽지 못했습니다.';
             }
         }
 
@@ -298,10 +291,10 @@
             workspace.classList.toggle('hidden', name !== 'workspace');
             workspace.classList.toggle('flex', name === 'workspace');
             const labels = {
-                home: '프로젝트 선택',
-                mode: '모드 선택',
-                live: '실험 중 · 피험자',
-                workspace: workspaceMode === 'prep' ? '실험 전 · 서명란 배치' : '실험 중 · 서명 진행'
+                home: '프로젝트',
+                mode: '모드',
+                live: '스터디 진행',
+                workspace: workspaceMode === 'prep' ? 'PDF 설정' : '스터디 진행'
             };
             document.getElementById('modeBadge').textContent = labels[name] || '';
         }
@@ -349,10 +342,40 @@
             await loadProjects();
         }
 
+        function renderOutputDir() {
+            const label = document.getElementById('outputDirLabel');
+            if (!label) return;
+            label.textContent = (currentProject && currentProject.outputDir) || '지정되지 않음';
+        }
+
+        async function pickOutputFolder() {
+            if (!currentProject) return;
+            const label = document.getElementById('outputDirLabel');
+            if (label) label.textContent = '폴더 창에서 위치를 고르세요.';
+            try {
+                const picked = await api('/api/pick-folder', { method: 'POST' });
+                if (!picked.path) {
+                    renderOutputDir();
+                    return;
+                }
+                currentProject = await api(`/api/projects/${currentProject.id}/output-dir`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: picked.path })
+                });
+            } catch (error) {
+                if (label) label.textContent = error.message || '폴더를 지정하지 못했습니다.';
+                return;
+            }
+            renderOutputDir();
+        }
+
         async function selectProject(id) {
             currentProject = await api(`/api/projects/${id}`);
             document.getElementById('modeProjectName').textContent = currentProject.name;
+            renderOutputDir();
             showScreen('mode');
+            if (!currentProject.outputDir) await pickOutputFolder();
         }
 
         function showHome() {
@@ -400,7 +423,7 @@
             const list = document.getElementById('participantList');
             const people = currentProject.participants || [];
             if (!people.length) {
-                list.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">아직 피험자가 없습니다. 이름으로 추가하세요.</p>';
+                list.innerHTML = '<p class="text-xs text-slate-400 py-4 text-center">피험자가 없습니다.</p>';
                 return;
             }
             const totalFields = (currentProject.documents || []).reduce((sum, doc) => sum + (doc.fields || []).length, 0);
@@ -411,9 +434,9 @@
                 }, 0);
                 const state = person.confirmed ? '확인 완료' : (totalFields && signed >= totalFields ? '확인 대기' : `서명 ${signed}/${totalFields}`);
                 return `
-                    <button onclick="openParticipant('${person.id}')" class="w-full text-left border border-emerald-200 rounded-xl p-3 hover:bg-emerald-50">
+                    <button onclick="openParticipant('${person.id}')" class="w-full text-left border live-soft rounded-xl p-3 bg-white">
                         <span class="block font-bold text-sm">${escapeHtml(person.name)}</span>
-                        <span class="block text-[11px] text-emerald-700 mt-0.5">${state}</span>
+                        <span class="block text-[11px] live-text mt-0.5">${person.pid || ''} ${state}</span>
                     </button>
                 `;
             }).join('');
@@ -437,6 +460,7 @@
             currentParticipantId = participantId;
             workspaceMode = 'live';
             isEditMode = false;
+            exportedDocs = new Set();
             applyWorkspaceChrome();
             const person = currentParticipant();
             document.getElementById('pName').value = person ? person.name : '';
@@ -458,21 +482,21 @@
             document.getElementById('docListLive').classList.toggle('hidden', prep);
             document.getElementById('editModeTools').classList.toggle('hidden', !prep);
             document.getElementById('liveModeStatus').classList.toggle('hidden', prep);
-            document.getElementById('participantCard').classList.toggle('hidden', prep);
+            document.getElementById('resetCard').classList.toggle('hidden', prep);
             document.getElementById('btnDownload').classList.toggle('hidden', prep);
             const banner = document.getElementById('workspaceBanner');
             banner.className = prep
-                ? 'rounded-2xl p-4 border-2 border-amber-300 bg-amber-50'
-                : 'rounded-2xl p-4 border-2 border-emerald-400 bg-emerald-50';
-            document.getElementById('workspaceKicker').className = prep ? 'text-[11px] font-bold text-amber-700' : 'text-[11px] font-bold text-emerald-700';
-            document.getElementById('workspaceKicker').textContent = prep ? '실험 전' : '실험 중';
-            document.getElementById('workspaceTitle').textContent = prep ? '서명란 배치' : (currentParticipant() ? currentParticipant().name : '서명 진행');
-            document.getElementById('workspaceHint').className = prep ? 'text-[11px] text-amber-800 mt-1 leading-relaxed' : 'text-[11px] text-emerald-800 mt-1 leading-relaxed';
-            document.getElementById('workspaceHint').textContent = prep
-                ? '여러 PDF의 서명란 위치를 조정하면 프로젝트 JSON에 저장됩니다.'
-                : 'iPad에서 서명이 끝나면 다음 서명란, 다음 PDF로 넘어갑니다.';
-            document.getElementById('editorHeading').textContent = prep ? '서명란 위치와 크기' : '서명 진행';
+                ? 'w-full text-left cursor-pointer rounded-2xl p-4 border-2 prep-soft'
+                : 'w-full text-left cursor-pointer rounded-2xl p-4 border-2 live-soft';
+            document.getElementById('workspaceKicker').className = prep ? 'text-[11px] font-bold mt-2 prep-text' : 'text-[11px] font-bold mt-2 live-text';
+            document.getElementById('workspaceKicker').textContent = prep ? 'PDF 설정' : '스터디 진행';
+            document.getElementById('workspaceTitle').textContent = prep ? '서명란' : (currentParticipant() ? currentParticipant().name : '서명');
+            const hint = document.getElementById('workspaceHint');
+            hint.textContent = '';
+            hint.classList.add('hidden');
+            document.getElementById('editorHeading').textContent = '서명란';
             showScreen('workspace');
+            renderResetList();
         }
 
         function leaveWorkspace() {
@@ -528,7 +552,7 @@
             await renderContinuousPDF(pdfRawBytes);
             renderDocList();
             updateConfirmButton();
-            document.getElementById('fileNameLabel').textContent = doc.name;
+            document.getElementById('fileNameLabel').textContent = '동의서 추가';
         }
 
         function rememberSignatures() {
@@ -558,8 +582,150 @@
                 }
                 updateConfirmButton();
                 updateLiveModeDetail();
+                const next = nextUnsignedField();
+                if (next) scrollToField(next.id);
+                await exportFinishedDocuments();
+                renderResetList();
             } finally {
                 advancing = false;
+            }
+        }
+
+        function scrollToField(fieldId) {
+            const box = document.querySelector(`.draggable-field[data-field-id="${CSS.escape(fieldId)}"]`);
+            if (box) box.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+
+        function renderResetList() {
+            const root = document.getElementById('resetFieldList');
+            if (!root) return;
+            const person = currentParticipant();
+            if (workspaceMode !== 'live' || !currentProject || !person) {
+                root.innerHTML = '';
+                return;
+            }
+            const items = [];
+            (currentProject.documents || []).forEach(doc => {
+                const saved = ((person.signatures || {})[doc.id]) || {};
+                (doc.fields || []).forEach(field => {
+                    const live = doc.id === currentDocumentId ? fields.find(item => item.id === field.id) : null;
+                    const signed = live ? !!live.signed : !!(saved[field.id] && saved[field.id].signed);
+                    items.push({ doc, field, signed });
+                });
+            });
+            if (!items.length) {
+                root.innerHTML = '<p class="text-[11px] text-slate-400">서명란이 없습니다.</p>';
+                return;
+            }
+            root.innerHTML = items.map(({ doc, field, signed }) => `
+                <div class="flex items-center gap-2 border rounded-lg px-2 py-1.5 live-soft bg-white">
+                    <span class="flex-1 text-[11px] text-slate-700">
+                        <b>${escapeHtml(doc.name)}</b> · ${field.page}페이지 · ${escapeHtml(field.label || '서명')}
+                        <span class="block text-[10px] ${signed ? 'live-text' : 'text-slate-400'}">${signed ? '서명됨' : '아직 없음'}</span>
+                    </span>
+                    <button type="button" ${signed ? '' : 'disabled'} onclick="resetField('${doc.id}','${field.id}')" class="px-2 py-1 rounded-lg text-[10px] font-bold ${signed ? 'live-solid' : 'bg-slate-100 text-slate-400'}">다시 서명</button>
+                </div>
+            `).join('');
+        }
+
+        async function resetField(documentId, fieldId) {
+            const person = currentParticipant();
+            if (!person || workspaceMode !== 'live') return;
+            currentProject = await api(`/api/projects/${currentProject.id}/participants/${person.id}/documents/${documentId}/fields/${fieldId}/clear`, { method: 'POST' });
+            currentParticipantId = person.id;
+            exportedDocs.delete(documentId);
+            if (documentId !== currentDocumentId) {
+                await activateDocument(documentId);
+            } else {
+                const field = fields.find(item => item.id === fieldId);
+                if (field) {
+                    field.signed = false;
+                    field.img = null;
+                }
+                renderFieldOverlays();
+                updateLiveModeDetail();
+                if (ws && ws.readyState === WebSocket.OPEN) sendRegions();
+            }
+            scrollToField(fieldId);
+            renderResetList();
+            updateConfirmButton();
+        }
+
+        async function buildSignedPdf(rawBytes, signatureFields) {
+            const pdfDocLib = await PDFLib.PDFDocument.load(rawBytes);
+            const pages = pdfDocLib.getPages();
+            for (const field of signatureFields) {
+                if (!field.signed || !field.img) continue;
+                const page = pages[field.page - 1];
+                if (!page) continue;
+                const { width, height } = page.getSize();
+                const imgBytes = await fetch(field.img).then(res => res.arrayBuffer());
+                const embeddedImg = await pdfDocLib.embedPng(imgBytes);
+                page.drawImage(embeddedImg, {
+                    x: (field.x / 100) * width,
+                    y: height - ((field.y / 100) * height) - ((field.height / 100) * height),
+                    width: (field.width / 100) * width,
+                    height: (field.height / 100) * height
+                });
+            }
+            return pdfDocLib.save();
+        }
+
+        async function exportDocument(doc) {
+            const person = currentParticipant();
+            let raw = pdfRawBytes;
+            let signatureFields = fields;
+            if (doc.id !== currentDocumentId) {
+                const response = await fetch(`/api/projects/${currentProject.id}/documents/${doc.id}/file`);
+                raw = new Uint8Array(await response.arrayBuffer());
+                const saved = ((person.signatures || {})[doc.id]) || {};
+                signatureFields = (doc.fields || []).map(field => ({
+                    ...field,
+                    signed: !!(saved[field.id] && saved[field.id].signed),
+                    img: saved[field.id] && saved[field.id].img
+                }));
+            }
+            const bytes = await buildSignedPdf(raw, signatureFields);
+            const response = await fetch(`/api/projects/${currentProject.id}/participants/${person.id}/documents/${doc.id}/export`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/pdf' },
+                body: bytes
+            });
+            const text = await response.text();
+            let data = null;
+            try { data = text ? JSON.parse(text) : null; } catch (error) { data = null; }
+            if (!response.ok) throw new Error((data && data.detail) || text || 'PDF 저장에 실패했습니다.');
+            if (data && data.filename) {
+                const fresh = currentParticipant();
+                if (fresh) {
+                    if (!fresh.exports) fresh.exports = {};
+                    fresh.exports[doc.id] = data.filename;
+                }
+            }
+            return data;
+        }
+
+        async function exportFinishedDocuments() {
+            const status = document.getElementById('exportStatus');
+            const person = currentParticipant();
+            if (workspaceMode !== 'live' || !currentProject || !person) return;
+            if (!currentProject.outputDir) {
+                if (status) status.textContent = '출력 폴더를 지정하면 끝난 PDF가 거기에 저장됩니다.';
+                return;
+            }
+            for (const doc of currentProject.documents || []) {
+                const done = doc.id === currentDocumentId
+                    ? fields.every(field => field.signed)
+                    : docFieldsDone(doc, person);
+                const fieldCount = doc.id === currentDocumentId ? fields.length : (doc.fields || []).length;
+                if (!fieldCount || !done || exportedDocs.has(doc.id)) continue;
+                try {
+                    const saved = await exportDocument(doc);
+                    exportedDocs.add(doc.id);
+                    if (status && saved && saved.path) status.textContent = `저장됨: ${saved.path}`;
+                } catch (error) {
+                    if (status) status.textContent = error.message || 'PDF 저장에 실패했습니다.';
+                }
             }
         }
 
@@ -581,15 +747,18 @@
             if (!person) return;
             currentProject = await api(`/api/projects/${currentProject.id}/participants/${person.id}/confirm`, { method: 'POST' });
             currentParticipantId = person.id;
+            await exportFinishedDocuments();
             updateConfirmButton();
-            document.getElementById('workspaceHint').textContent = `${person.name} 서명을 확인했습니다.`;
+            const hint = document.getElementById('workspaceHint');
+            hint.textContent = `${person.name} 확인`;
+            hint.classList.remove('hidden');
         }
 
         function initWebSocket() {
             const loc = window.location;
             ws = new WebSocket(`ws://${loc.host}/ws`);
             ws.onopen = () => { if (workspaceMode === 'live') sendRegions(); };
-            ws.onmessage = (event) => {
+            ws.onmessage = async (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.type === 'FIELDS_UPDATED' || msg.type === 'SIGNATURE_RECEIVED') {
                     const nextFields = msg.fields || (msg.data && msg.data.fields);
@@ -598,10 +767,8 @@
                         renderFieldOverlays();
                     }
                     if (msg.type === 'SIGNATURE_RECEIVED' && msg.field_id && workspaceMode === 'live') {
-                        const signedBox = document.querySelector(`.draggable-field[data-field-id="${CSS.escape(msg.field_id)}"]`);
-                        if (signedBox) signedBox.scrollIntoView({ block: 'center', behavior: 'smooth' });
                         rememberSignatures();
-                        maybeAdvanceDocument();
+                        await maybeAdvanceDocument();
                     }
                 }
             };
@@ -714,7 +881,7 @@
             const file = event.target.files[0];
             event.target.value = '';
             if (!file || !currentProject || workspaceMode !== 'prep') return;
-            document.getElementById('fileNameLabel').textContent = file.name;
+            document.getElementById('fileNameLabel').textContent = '동의서 추가';
             currentProject = await api(`/api/projects/${currentProject.id}/documents?name=${encodeURIComponent(file.name)}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/pdf' },
@@ -774,16 +941,16 @@
             const ordered = orderedFields();
             const active = nextUnsignedField();
             if (!ordered.length) {
-                detail.textContent = '서명란이 없습니다. 실험 전 모드에서 서명란을 추가해 주세요.';
+                detail.textContent = '서명란 없음';
                 return;
             }
             const done = ordered.filter(field => field.signed).length;
             if (!active) {
-                detail.textContent = `모든 서명이 완료되었습니다. (${done}/${ordered.length})`;
+                detail.textContent = `완료 ${done}/${ordered.length}`;
                 return;
             }
             const index = ordered.findIndex(field => field.id === active.id) + 1;
-            detail.textContent = `iPad는 ${index}/${ordered.length}번째 서명란을 보고 있습니다. ${active.page}페이지. 전송되면 다음 서명란으로 넘어갑니다.`;
+            detail.textContent = `${index}/${ordered.length} · ${active.page}페이지`;
         }
 
         function renderFieldOverlays() {
@@ -805,7 +972,7 @@
                 box.style.height = `${f.height}%`;
 
                 const content = document.createElement('div');
-                content.className = `field-content flex items-center justify-center text-center text-xs font-bold px-2 ${isEditMode ? 'text-red-700' : isActive ? 'text-amber-800' : 'text-brand-600'}`;
+                content.className = `field-content flex items-center justify-center text-center text-xs font-bold px-2 ${isEditMode ? 'text-red-700' : isActive ? 'live-text' : 'text-brand-600'}`;
                 if (f.signed && f.img) {
                     content.innerHTML = `<img src="${f.img}" alt="서명" class="w-full h-full object-fill">`;
                 } else if (isEditMode) {

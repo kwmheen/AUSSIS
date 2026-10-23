@@ -1,6 +1,8 @@
+import asyncio
 import json
 import re
 import socket
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -51,6 +53,68 @@ app_state = {
 
 def now_iso():
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def file_stamp(value):
+    try:
+        parsed = datetime.fromisoformat(value)
+    except Exception:
+        parsed = datetime.now().astimezone()
+    return parsed.strftime("%Y%m%d-%H%M%S")
+
+
+def safe_filename(value):
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n]+', "_", str(value or "")).strip().strip(".")
+    return cleaned or "untitled"
+
+
+def next_pid(project):
+    used = {item.get("pid") for item in project.get("participants", [])}
+    number = 1
+    while f"P{number:03d}" in used:
+        number += 1
+    return f"P{number:03d}"
+
+
+def choose_folder():
+    script = r"""
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "PDF를 저장할 폴더"
+$dialog.ShowNewFolderButton = $true
+$owner = New-Object System.Windows.Forms.Form
+$owner.TopMost = $true
+$owner.ShowInTaskbar = $false
+$owner.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+$owner.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.Opacity = 0
+$owner.Show()
+$owner.Activate()
+$result = $dialog.ShowDialog($owner)
+$owner.Close()
+$owner.Dispose()
+if ($result -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dialog.SelectedPath) }
+"""
+    try:
+        completed = subprocess.run(
+            ["powershell", "-STA", "-NoProfile", "-Command", script],
+            capture_output=True,
+            timeout=180,
+        )
+    except Exception as error:
+        raise RuntimeError("폴더 창을 열지 못했습니다.") from error
+    if completed.returncode not in (0, None):
+        raise RuntimeError("폴더 창을 열지 못했습니다.")
+    raw = completed.stdout or b""
+    text = raw.decode("utf-8", errors="replace").strip()
+    if text and Path(text).is_dir():
+        return text
+    fallback = raw.decode("cp949", errors="replace").strip()
+    if fallback and Path(fallback).is_dir():
+        return fallback
+    return text
 
 
 def new_id(prefix):
@@ -211,6 +275,7 @@ async def create_project(payload: dict):
         "createdAt": now_iso(),
         "documents": [],
         "participants": [],
+        "outputDir": "",
     }
     save_project(project)
     return project
@@ -293,11 +358,14 @@ async def add_participant(project_id: str, payload: dict):
         raise HTTPException(status_code=400, detail="피험자 이름이 필요합니다.")
     project.setdefault("participants", []).append({
         "id": new_id("part"),
+        "pid": next_pid(project),
         "name": name,
         "createdAt": now_iso(),
+        "experimentAt": None,
         "confirmed": False,
         "confirmedAt": None,
         "signatures": {},
+        "exports": {},
     })
     save_project(project)
     return public_project(project)
@@ -312,6 +380,90 @@ def confirm_participant(project_id: str, participant_id: str):
     participant["confirmed"] = True
     participant["confirmedAt"] = now_iso()
     save_project(project)
+    return public_project(project)
+
+
+@app.post("/api/pick-folder")
+async def pick_folder():
+    try:
+        path = await asyncio.to_thread(choose_folder)
+    except Exception:
+        raise HTTPException(status_code=500, detail="폴더 창을 열지 못했습니다.")
+    if path and not Path(path).is_dir():
+        raise HTTPException(status_code=400, detail="폴더를 찾을 수 없습니다.")
+    return {"path": path}
+
+
+@app.put("/api/projects/{project_id}/output-dir")
+async def set_output_dir(project_id: str, payload: dict):
+    folder = Path(str(payload.get("path") or "").strip())
+    if not folder.is_dir():
+        raise HTTPException(status_code=400, detail="폴더를 찾을 수 없습니다.")
+    project = load_project(project_id)
+    project["outputDir"] = str(folder)
+    save_project(project)
+    return public_project(project)
+
+
+@app.post("/api/projects/{project_id}/participants/{participant_id}/documents/{document_id}/export")
+async def export_document(project_id: str, participant_id: str, document_id: str, request: Request):
+    data = await request.body()
+    if not data.startswith(b"%PDF"):
+        raise HTTPException(status_code=400, detail="PDF 파일이 아닙니다.")
+    project = load_project(project_id)
+    folder = Path(str(project.get("outputDir") or "").strip())
+    if not folder.is_dir():
+        raise HTTPException(status_code=400, detail="출력 폴더를 먼저 지정해 주세요.")
+    participant = find_item(project.get("participants", []), participant_id)
+    document = find_item(project.get("documents", []), document_id)
+    if not participant or not document:
+        raise HTTPException(status_code=404, detail="피험자 또는 문서를 찾을 수 없습니다.")
+    if not participant.get("pid"):
+        participant["pid"] = next_pid(project)
+    if not participant.get("experimentAt"):
+        participant["experimentAt"] = now_iso()
+    exports = participant.setdefault("exports", {})
+    filename = exports.get(document_id)
+    if not filename:
+        when = file_stamp(participant["experimentAt"])
+        stem = ""
+        if len(project.get("documents", [])) > 1:
+            stem = "_" + safe_filename(Path(document.get("name") or "consent").stem)
+        filename = f"{participant['pid']}_{when}_{safe_filename(participant.get('name'))}{stem}.pdf"
+        exports[document_id] = filename
+    target = (folder / filename).resolve()
+    if folder.resolve() != target.parent:
+        raise HTTPException(status_code=400, detail="파일 이름이 올바르지 않습니다.")
+    target.write_bytes(data)
+    save_project(project)
+    return {"path": str(target), "filename": filename}
+
+
+@app.post("/api/projects/{project_id}/participants/{participant_id}/documents/{document_id}/fields/{field_id}/clear")
+async def clear_signature(project_id: str, participant_id: str, document_id: str, field_id: str):
+    project = load_project(project_id)
+    participant = find_item(project.get("participants", []), participant_id)
+    document = find_item(project.get("documents", []), document_id)
+    if not participant or not document:
+        raise HTTPException(status_code=404, detail="피험자 또는 문서를 찾을 수 없습니다.")
+    if not any(field.get("id") == field_id for field in document.get("fields", [])):
+        raise HTTPException(status_code=404, detail="서명란을 찾을 수 없습니다.")
+    saved = (participant.get("signatures") or {}).get(document_id) or {}
+    if isinstance(saved, dict):
+        saved.pop(field_id, None)
+    participant["confirmed"] = False
+    participant["confirmedAt"] = None
+    save_project(project)
+    if (
+        app_state.get("project_id") == project["id"]
+        and app_state.get("participant_id") == participant_id
+        and app_state.get("document_id") == document_id
+    ):
+        for field in app_state["fields"]:
+            if field.get("id") == field_id:
+                field["signed"] = False
+                field["img"] = None
+        await manager.broadcast({"type": "FIELDS_UPDATED", "fields": app_state["fields"]})
     return public_project(project)
 
 
@@ -407,7 +559,7 @@ async def get_pad_page(request: Request):
 if __name__ == "__main__":
     local_ip = get_local_ipv4()
     print("==================================================")
-    print("IRB PDF Server starting...")
+    print("AUSSIS server starting...")
     print(f"PC Admin URL:  http://localhost:8000")
     print(f"iPad Pad URL:   http://{local_ip}:8000/pad")
     print(f"IPv4:           {local_ip}")
